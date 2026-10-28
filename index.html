@@ -1,0 +1,527 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f4f8ff">
+  <meta name="description" content="把纯文本剧本变成可录屏的聊天回放：按字数计算节奏，用 async/await 串行播放。">
+  <title>回声 Echo — 聊天回放器</title>
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body data-theme="day">
+  <svg class="svg-defs" aria-hidden="true" focusable="false">
+    <symbol id="i-play" viewBox="0 0 24 24"><path d="M8 5.2v13.6c0 .8.9 1.3 1.6.9l10.1-6.8c.6-.4.6-1.4 0-1.8L9.6 4.3C8.9 3.9 8 4.4 8 5.2Z" fill="currentColor"/></symbol>
+    <symbol id="i-pause" viewBox="0 0 24 24"><rect x="6.6" y="4.8" width="3.6" height="14.4" rx="1.4" fill="currentColor"/><rect x="13.8" y="4.8" width="3.6" height="14.4" rx="1.4" fill="currentColor"/></symbol>
+    <symbol id="i-restart" viewBox="0 0 24 24"><path d="M4 4v5h5"/><path d="M5.6 15.2A8 8 0 1 0 6.9 7.1L4 10"/></symbol>
+    <symbol id="i-upload" viewBox="0 0 24 24"><path d="M12 16V4"/><path d="m7.5 8.5 4.5-4.5 4.5 4.5"/><path d="M5 15v3a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-3"/></symbol>
+    <symbol id="i-focus" viewBox="0 0 24 24"><path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M16 3h3a2 2 0 0 1 2 2v3"/><path d="M8 21H5a2 2 0 0 1-2-2v-3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/><path d="M8 12h8"/></symbol>
+    <symbol id="i-moon" viewBox="0 0 24 24"><path d="M20.2 15.2A8.6 8.6 0 0 1 8.8 3.8 8.7 8.7 0 1 0 20.2 15.2Z"/></symbol>
+    <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.9 4.9 1.4 1.4"/><path d="m17.7 17.7 1.4 1.4"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m4.9 19.1 1.4-1.4"/><path d="m17.7 6.3 1.4-1.4"/></symbol>
+    <symbol id="i-close" viewBox="0 0 24 24"><path d="m6 6 12 12"/><path d="M18 6 6 18"/></symbol>
+    <symbol id="i-chevron-left" viewBox="0 0 24 24"><path d="m15 18-6-6 6-6"/></symbol>
+    <symbol id="i-more" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.2" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.2" fill="currentColor" stroke="none"/><circle cx="19" cy="12" r="1.2" fill="currentColor" stroke="none"/></symbol>
+    <symbol id="i-video" viewBox="0 0 24 24"><rect x="3" y="6" width="12" height="12" rx="3"/><path d="m15 10 5-3v10l-5-3"/></symbol>
+    <symbol id="i-phone" viewBox="0 0 24 24"><path d="M7.2 3.5 9 7.7a1.5 1.5 0 0 1-.4 1.7l-1.5 1.3a14.2 14.2 0 0 0 5.2 5.2l1.3-1.5a1.5 1.5 0 0 1 1.7-.4l4.2 1.8a1.5 1.5 0 0 1 .9 1.5l-.2 2.2a2 2 0 0 1-2.2 1.8C10.2 20.3 3.7 13.8 2.7 5a2 2 0 0 1 1.8-2.2l2.2-.2a1.5 1.5 0 0 1 1.5.9Z"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14"/><path d="M5 12h14"/></symbol>
+    <symbol id="i-smile" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8.5 14.5a4.4 4.4 0 0 0 7 0"/><path d="M9 9.5h.01"/><path d="M15 9.5h.01"/></symbol>
+    <symbol id="i-send" viewBox="0 0 24 24"><path d="M4.4 11.2 19.6 4.5c.8-.4 1.6.4 1.3 1.2l-5.7 14.5c-.3.8-1.4.9-1.9.2l-3-4.6-4.7-2.9c-.8-.5-.7-1.6 0-1.9Z"/><path d="m10.3 15.8 4.3-4.3"/></symbol>
+    <symbol id="i-check-check" viewBox="0 0 24 24"><path d="m3.5 12.5 3.3 3.3L13.4 9"/><path d="m10.5 15.8 1.4 1.4L21 8"/></symbol>
+    <symbol id="i-sparkle" viewBox="0 0 24 24"><path d="M12 3c.6 4.8 3.2 7.4 8 8-4.8.6-7.4 3.2-8 8-.6-4.8-3.2-7.4-8-8 4.8-.6 7.4-3.2 8-8Z"/><path d="M19 16.5c.2 1.5 1 2.3 2.5 2.5-1.5.2-2.3 1-2.5 2.5-.2-1.5-1-2.3-2.5-2.5 1.5-.2 2.3-1 2.5-2.5Z"/></symbol>
+    <symbol id="i-sliders" viewBox="0 0 24 24"><path d="M4 6h9"/><path d="M17 6h3"/><circle cx="15" cy="6" r="2"/><path d="M4 12h3"/><path d="M11 12h9"/><circle cx="9" cy="12" r="2"/><path d="M4 18h9"/><path d="M17 18h3"/><circle cx="15" cy="18" r="2"/></symbol>
+    <symbol id="i-arrow-down" viewBox="0 0 24 24"><path d="M12 4v16"/><path d="m6 14 6 6 6-6"/></symbol>
+    <symbol id="i-corner-down-left" viewBox="0 0 24 24"><path d="M9 10 4 15l5 5"/><path d="M20 4v7a4 4 0 0 1-4 4H4"/></symbol>
+    <symbol id="i-wifi" viewBox="0 0 24 24"><path d="M4.2 9.2a11.2 11.2 0 0 1 15.6 0"/><path d="M7.2 12.3a7 7 0 0 1 9.6 0"/><path d="M10.2 15.4a2.8 2.8 0 0 1 3.6 0"/><circle cx="12" cy="19" r=".8" fill="currentColor" stroke="none"/></symbol>
+    <symbol id="i-signal" viewBox="0 0 24 24"><rect x="3" y="14" width="3" height="6" rx="1" fill="currentColor" stroke="none"/><rect x="8" y="11" width="3" height="9" rx="1" fill="currentColor" stroke="none"/><rect x="13" y="7.5" width="3" height="12.5" rx="1" fill="currentColor" stroke="none"/><rect x="18" y="4" width="3" height="16" rx="1" fill="currentColor" stroke="none"/></symbol>
+    <symbol id="i-battery" viewBox="0 0 28 24"><rect x="2.5" y="6.5" width="20" height="11" rx="3" opacity=".5"/><rect x="5" y="9" width="15" height="6" rx="1.5" fill="currentColor" stroke="none"/><path d="M25 10.2v3.6" opacity=".55" stroke-width="2.5"/></symbol>
+    <symbol id="i-copy" viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="12" rx="2.5"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></symbol>
+    <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7h16"/><path d="M9 7V5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2"/><path d="m6 7 1 13h10l1-13"/><path d="M10 11v5"/><path d="M14 11v5"/></symbol>
+    <symbol id="i-command" viewBox="0 0 24 24"><path d="M9 6a3 3 0 1 0-3 3h12a3 3 0 1 0-3-3v12a3 3 0 1 0 3-3H6a3 3 0 1 0 3 3Z"/></symbol>
+    <symbol id="i-camera" viewBox="0 0 24 24"><path d="M4 8.2h2.8l1.4-2.1h7.6l1.4 2.1H20a1 1 0 0 1 1 1v8.7a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9.2a1 1 0 0 1 1-1Z"/><circle cx="12" cy="13.2" r="3.3"/></symbol>
+    <symbol id="i-chevron-up" viewBox="0 0 24 24"><path d="m6 15 6-6 6 6"/></symbol>
+    <symbol id="i-chevron-down" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+    <symbol id="i-user-plus" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.2"/><path d="M3.4 19.6a5.8 5.8 0 0 1 11.2 0"/><path d="M18 7.5v6"/><path d="M15 10.5h6"/></symbol>
+    <symbol id="i-users" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.1"/><path d="M3.4 19.4a5.8 5.8 0 0 1 11.2 0"/><path d="M16.1 5.6a3 3 0 0 1 0 5.6"/><path d="M17.5 14.3a5.4 5.4 0 0 1 3.1 4.5"/></symbol>
+    <symbol id="i-minus" viewBox="0 0 24 24"><path d="M6 12h12"/></symbol>
+    <symbol id="i-dialogue" viewBox="0 0 24 24"><path d="M20.5 14.2a2 2 0 0 1-2 2H9l-4.5 3.6v-3.6H3.5a2 2 0 0 1-2-2V7.2a2 2 0 0 1 2-2h15a2 2 0 0 1 2 2Z"/><path d="M7.5 8.7h7"/><path d="M7.5 11.9h4.5"/></symbol>
+  </svg>
+
+  <div class="app-shell">
+    <header class="topbar" id="topbar">
+      <a class="brand" href="./" aria-label="回声首页">
+        <span class="brand-mark"><svg class="icon"><use href="#i-sparkle"/></svg></span>
+        <span class="brand-copy">
+          <strong>回声<span>Echo</span></strong>
+          <small>CHAT REPLAY STUDIO</small>
+        </span>
+      </a>
+
+      <div class="scene-id">
+        <span class="scene-dot"></span>
+        <span>SCENE 01</span>
+        <span class="scene-divider"></span>
+        <span id="sceneTitle">雨停之前</span>
+      </div>
+
+      <div class="topbar-actions">
+        <button class="icon-btn ghost" id="themeBtn" type="button" aria-label="切换到夜间主题" title="切换到夜间主题">
+          <svg class="icon"><use href="#i-moon"/></svg>
+        </button>
+        <button class="btn btn-quiet panel-toggle" id="panelToggle" type="button" aria-label="打开控制台" aria-controls="panel" aria-expanded="false">
+          <svg class="icon"><use href="#i-sliders"/></svg><span>控制台</span>
+        </button>
+        <button class="btn btn-quiet" id="importBtn" type="button">
+          <svg class="icon"><use href="#i-upload"/></svg><span>导入剧本</span>
+        </button>
+        <button class="btn btn-accent" id="focusBtn" type="button">
+          <svg class="icon"><use href="#i-focus"/></svg><span>录屏模式</span>
+        </button>
+        <button class="icon-btn ghost topbar-collapse" id="topbarCollapse" type="button" aria-label="收起顶栏" aria-controls="topbar" aria-expanded="true" title="收起顶栏 (H)">
+          <svg class="icon"><use href="#i-chevron-up"/></svg>
+        </button>
+      </div>
+    </header>
+
+    <main class="workspace">
+      <section class="stage" aria-label="聊天回放预览">
+        <div class="stage-glow"></div>
+        <div class="stage-word" aria-hidden="true">ECHO</div>
+        <div class="stage-grid" aria-hidden="true"></div>
+
+        <div class="phone-wrap">
+          <div class="phone-shadow" aria-hidden="true"></div>
+          <div class="phone-shell">
+            <div class="phone">
+              <div class="screen">
+                <div class="status-bar">
+                  <span class="status-time" id="statusTime">21:07</span>
+                  <div class="dynamic-island"><span class="lens"></span></div>
+                  <div class="status-icons">
+                    <svg class="icon status-icon"><use href="#i-signal"/></svg>
+                    <svg class="icon status-icon"><use href="#i-wifi"/></svg>
+                    <svg class="icon battery-icon"><use href="#i-battery"/></svg>
+                  </div>
+                </div>
+
+                <header class="chat-header">
+                  <button class="chat-icon" type="button" aria-label="返回" tabindex="-1">
+                    <svg class="icon"><use href="#i-chevron-left"/></svg>
+                  </button>
+                  <div class="header-person">
+                    <div class="header-cluster">
+                      <button class="avatar header-avatar avatar-edit" id="headerAvatar" type="button" data-avatar-edit="other" style="--avatar-accent:#5f83ba" aria-label="更换对方的头像" title="更换头像">
+                        <span class="avatar-media" aria-hidden="true">雾</span>
+                        <span class="online-dot"></span>
+                      </button>
+                      <span class="header-stack" id="headerStack" aria-hidden="true" hidden></span>
+                    </div>
+                    <div class="header-copy">
+                      <strong id="headerName">林雾</strong>
+                      <span id="headerStatus"><i class="presence-dot"></i>在线 · 正在听雨</span>
+                    </div>
+                  </div>
+                  <div class="header-actions">
+                    <button class="chat-icon" type="button" aria-label="视频通话" tabindex="-1">
+                      <svg class="icon"><use href="#i-video"/></svg>
+                    </button>
+                    <button class="chat-icon" type="button" aria-label="语音通话" tabindex="-1">
+                      <svg class="icon"><use href="#i-phone"/></svg>
+                    </button>
+                    <button class="chat-icon" type="button" aria-label="更多" tabindex="-1">
+                      <svg class="icon"><use href="#i-more"/></svg>
+                    </button>
+                  </div>
+                </header>
+
+                <div class="chat" id="chat" role="log" aria-live="polite" aria-label="聊天记录"></div>
+
+                <div class="countdown-layer" id="countdownLayer" hidden aria-live="polite">
+                  <div class="countdown-dial">
+                    <span class="countdown-number" id="countdownNumber">6</span>
+                    <span class="countdown-hint">开始录屏</span>
+                  </div>
+                </div>
+
+                <button class="scroll-bottom" id="scrollBottom" type="button" aria-label="回到最新消息">
+                  <svg class="icon"><use href="#i-arrow-down"/></svg>
+                  <span>1</span>
+                </button>
+
+                <form class="composer" id="composer" autocomplete="off">
+                  <button class="composer-action" id="composerImport" type="button" aria-label="导入剧本" title="导入剧本">
+                    <svg class="icon"><use href="#i-plus"/></svg>
+                  </button>
+                  <div class="composer-field">
+                    <textarea id="messageInput" rows="1" placeholder="发消息给林雾…" aria-label="输入消息"></textarea>
+                    <button class="emoji-btn" id="emojiBtn" type="button" aria-label="选择表情">
+                      <svg class="icon"><use href="#i-smile"/></svg>
+                    </button>
+                    <div class="emoji-pop" id="emojiPop" hidden></div>
+                  </div>
+                  <button class="send-btn" id="sendBtn" type="submit" aria-label="发送消息" disabled>
+                    <svg class="icon"><use href="#i-send"/></svg>
+                  </button>
+                </form>
+                <div class="home-indicator" aria-hidden="true"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="stage-toolbar">
+          <div class="player-main">
+            <button class="play-btn" id="playToggle" type="button" aria-label="暂停播放">
+              <svg class="icon play-icon"><use href="#i-pause"/></svg>
+              <span class="play-ring"></span>
+            </button>
+            <button class="mini-btn" id="restartBtn" type="button" aria-label="重新播放" title="重新播放 (R)">
+              <svg class="icon"><use href="#i-restart"/></svg>
+            </button>
+            <div class="player-meta">
+              <div class="player-line">
+                <span id="playState" class="play-state"><i></i>正在播放</span>
+                <span class="count" id="countLabel">00 / 00</span>
+              </div>
+              <div class="progress" id="progressTrack" role="progressbar" aria-label="播放进度" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+                <span class="progress-fill" id="progressFill"></span>
+              </div>
+            </div>
+          </div>
+          <div class="player-side">
+            <span class="duration" id="durationLabel">约 00:31</span>
+            <label class="countdown-field" title="点播放后先倒计时，方便开始录屏">
+              <span class="countdown-label">倒计时</span>
+              <input id="countdownInput" type="number" min="0" max="30" step="1" value="6" inputmode="numeric" aria-label="播放前倒计时秒数">
+              <span class="countdown-unit">s</span>
+            </label>
+            <div class="speed-switch" id="speedSwitch" aria-label="播放速度">
+              <button type="button" data-speed="0.75">0.75×</button>
+              <button type="button" data-speed="1" class="is-active">1×</button>
+              <button type="button" data-speed="1.5">1.5×</button>
+              <button type="button" data-speed="2">2×</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <aside class="panel" id="panel" aria-label="剧本控制台">
+        <div class="panel-head">
+          <div>
+            <span class="eyebrow">DIRECTOR'S DESK</span>
+            <h1>剧本控制台</h1>
+          </div>
+          <div class="panel-head-tools">
+            <span class="ready-pill"><i></i>READY</span>
+            <button class="panel-close" id="panelClose" type="button" aria-label="关闭控制台">
+              <svg class="icon"><use href="#i-close"/></svg>
+            </button>
+          </div>
+        </div>
+
+        <section class="panel-card script-card">
+          <div class="card-head">
+            <div class="card-title"><span>01</span> 剧本 <small>SCRIPT</small></div>
+            <div class="card-actions">
+              <button class="text-btn text-btn-icon" id="splitDialogBtn" type="button" title="把一段文字按句号切成对话气泡">
+                <svg class="icon"><use href="#i-dialogue"/></svg>
+                文本转对话
+              </button>
+              <button class="text-btn" id="resetScriptBtn" type="button">恢复示例</button>
+            </div>
+          </div>
+          <textarea id="scriptEditor" class="script-editor" spellcheck="false" aria-label="剧本内容"></textarea>
+          <div class="script-footer">
+            <span id="scriptStats">0 条对话 · 约 00:00</span>
+            <button class="btn btn-mini btn-dark" id="applyScriptBtn" type="button">
+              应用并回放
+              <svg class="icon"><use href="#i-play"/></svg>
+            </button>
+          </div>
+          <p class="script-error" id="scriptError" role="alert" hidden></p>
+        </section>
+
+        <section class="panel-card cast-card">
+          <div class="card-head">
+            <div class="card-title"><span>02</span> 人物 <small>CAST</small></div>
+            <span class="card-count" id="castCount">2 PEOPLE</span>
+          </div>
+
+          <div class="cast-mode" id="castMode" role="group" aria-label="对话模式">
+            <button type="button" data-mode="duo" class="is-active">双人对话</button>
+            <button type="button" data-mode="group">群聊故事</button>
+          </div>
+
+          <label class="group-name-field" id="groupNameField" hidden>
+            <span>群名</span>
+            <input id="groupNameInput" maxlength="24" value="雨夜小群" aria-label="群聊名称">
+          </label>
+
+          <div class="contact-editor" id="contactEditor"></div>
+
+          <div class="cast-foot">
+            <button class="cast-add" id="castAddBtn" type="button">
+              <svg class="icon"><use href="#i-user-plus"/></svg>
+              添加人物
+            </button>
+            <label class="cast-toggle">
+              <input type="checkbox" id="selfAvatarToggle" checked>
+              <span>显示我的头像</span>
+            </label>
+          </div>
+
+          <p class="avatar-hint">
+            <svg class="icon"><use href="#i-camera"/></svg>
+            点头像上传图片，自动裁成方形 · JPG / PNG / WebP
+          </p>
+        </section>
+
+        <section class="panel-card timing-card">
+          <div class="card-head">
+            <div class="card-title"><span>03</span> 节奏 <small>TIMING</small></div>
+            <span class="live-label"><i></i>字数驱动</span>
+          </div>
+          <div class="timing-row">
+            <div class="timing-caption">
+              <strong>文字密度</strong>
+              <span>等待与输入均按字数计算</span>
+            </div>
+            <div class="pace-switch" id="paceSwitch" aria-label="节奏强度">
+              <button type="button" data-pace="0.75">舒缓</button>
+              <button type="button" data-pace="1" class="is-active">自然</button>
+              <button type="button" data-pace="1.3">紧凑</button>
+            </div>
+          </div>
+          <div class="timing-meter">
+            <span>WAIT</span>
+            <div class="meter-lines"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+            <span>TYPE</span>
+          </div>
+        </section>
+
+        <section class="panel-card social-card">
+          <div class="card-head">
+            <div class="card-title"><span>04</span> 关注 <small>SOCIAL</small></div>
+            <span class="live-label"><i></i>持续更新</span>
+          </div>
+          <nav class="social-links" aria-label="作者主页">
+            <a
+              class="social-link"
+              href="https://www.douyin.com/user/MS4wLjABAAAAf8wEW4836Usm0HYqRodZmckClkF5yFhpjg5sxWwsMh5NfuWXkyr_uE3lvGj_8I4w?from_tab_name=main"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              抖音主页 ↗
+            </a>
+            <a
+              class="social-link"
+              href="https://www.xiaohongshu.com/user/profile/68e7874b000000003201cc4f"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              小红书 ↗
+            </a>
+            <a
+              class="social-link"
+              href="https://space.bilibili.com/510195231?spm_id_from=333.1007.0.0"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              B站主页 ↗
+            </a>
+          </nav>
+        </section>
+
+        <div class="panel-foot">
+          <span><svg class="icon"><use href="#i-corner-down-left"/></svg> Enter 发送</span>
+          <span>Shift + Enter 换行</span>
+          <span>Space 播放 / 暂停</span>
+        </div>
+      </aside>
+    </main>
+  </div>
+
+  <button class="topbar-restore" id="topbarRestore" type="button" aria-label="展开顶栏" aria-controls="topbar" title="展开顶栏 (H)">
+    <svg class="icon"><use href="#i-chevron-down"/></svg>
+    <span>工具栏</span>
+  </button>
+
+  <input type="file" id="avatarFile" accept="image/png,image/jpeg,image/webp" hidden>
+
+  <div class="focus-hud" id="focusHud">
+    <button class="hud-btn" id="focusPlay" type="button" aria-label="播放或暂停">
+      <svg class="icon"><use href="#i-pause"/></svg>
+    </button>
+    <button class="hud-btn" id="focusRestart" type="button" aria-label="重新播放">
+      <svg class="icon"><use href="#i-restart"/></svg>
+    </button>
+    <div class="hud-divider"></div>
+    <span class="hud-state" id="focusState">正在播放</span>
+    <div class="hud-progress"><span id="focusProgress"></span></div>
+    <span class="hud-count" id="focusCount">00 / 00</span>
+    <div class="hud-divider"></div>
+    <button class="hud-btn hud-exit" id="focusExit" type="button" aria-label="退出录屏模式">
+      <svg class="icon"><use href="#i-close"/></svg>
+    </button>
+  </div>
+  <div class="hud-hint" id="hudHint">移动鼠标呼出控制条 · Esc 退出</div>
+
+  <dialog class="import-dialog" id="importDialog" aria-labelledby="importTitle">
+    <form class="dialog-card" method="dialog" id="importForm">
+      <div class="dialog-head">
+        <div class="dialog-heading">
+          <span class="dialog-icon"><svg class="icon"><use href="#i-upload"/></svg></span>
+          <div>
+            <span class="eyebrow">PASTE &amp; PLAY</span>
+            <h2 id="importTitle">导入一段对话</h2>
+          </div>
+        </div>
+        <button class="icon-btn dialog-close" id="dialogClose" type="button" aria-label="关闭">
+          <svg class="icon"><use href="#i-close"/></svg>
+        </button>
+      </div>
+
+      <div class="dialog-body">
+        <div class="dialog-input-side">
+          <label for="importText">纯文本剧本</label>
+          <textarea id="importText" spellcheck="false" placeholder="在这里粘贴你的剧本…
+
+林雾：你那边下雨了吗？
+沈言：刚停，窗户上全是水。
+林雾：那正好，适合讲一个很长的故事。"></textarea>
+          <div class="import-status">
+            <span id="importParseState" class="parse-state" aria-live="polite"><i></i>等待输入</span>
+            <span id="importEstimate">按字数自动计算节奏</span>
+          </div>
+        </div>
+
+        <aside class="syntax-side">
+          <span class="syntax-title">剧本语法</span>
+          <div class="syntax-item">
+            <code>林雾：你好</code>
+            <span>人物 + 冒号 + 台词</span>
+          </div>
+          <div class="syntax-item">
+            <code>[系统] 故事开始</code>
+            <span>灰色系统提示</span>
+          </div>
+          <div class="syntax-item">
+            <code>[时间] 21:07</code>
+            <span>时间分割线</span>
+          </div>
+          <div class="syntax-item">
+            <code># 注释</code>
+            <span>不会被播放</span>
+          </div>
+          <button class="sample-link" id="fillSampleBtn" type="button">
+            <svg class="icon"><use href="#i-sparkle"/></svg>
+            填入一段示例
+          </button>
+          <button class="sample-link" id="fillGroupSampleBtn" type="button">
+            <svg class="icon"><use href="#i-users"/></svg>
+            填入群聊示例（3 人）
+          </button>
+        </aside>
+      </div>
+
+      <div class="dialog-foot">
+        <div class="dialog-tip">
+          <svg class="icon"><use href="#i-command"/></svg>
+          识别说话人后，会自动匹配左右气泡
+        </div>
+        <div class="dialog-actions">
+          <button class="btn btn-quiet" id="dialogCancel" type="button">取消</button>
+          <button class="btn btn-accent" id="importConfirm" type="submit" disabled>
+            导入并播放
+            <svg class="icon"><use href="#i-play"/></svg>
+          </button>
+        </div>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog class="import-dialog split-dialog" id="splitDialog" aria-labelledby="splitTitle">
+    <form class="dialog-card" method="dialog" id="splitForm">
+      <div class="dialog-head">
+        <div class="dialog-heading">
+          <span class="dialog-icon"><svg class="icon"><use href="#i-dialogue"/></svg></span>
+          <div>
+            <span class="eyebrow">TEXT → DIALOGUE</span>
+            <h2 id="splitTitle">文本转对话</h2>
+          </div>
+        </div>
+        <button class="icon-btn dialog-close" id="splitClose" type="button" aria-label="关闭">
+          <svg class="icon"><use href="#i-close"/></svg>
+        </button>
+      </div>
+
+      <div class="dialog-body split-body">
+        <div class="dialog-input-side">
+          <label for="splitText">一段文字 · 每个「。」切成一个气泡</label>
+          <textarea id="splitText" spellcheck="false" placeholder="把一整段叙述粘进来，会自动按句号切句。
+
+单独一行的时间（例如 23:40、今天 23:40、[时间] 昨晚十点）会被识别成时间节点，也能在右边直接改。
+
+例如：
+雨停在凌晨。她把窗推开一条缝，湿气涌进来。他说，那就今晚把话说完吧。她没有回答，只是把灯调暗了一点。"></textarea>
+          <div class="import-status">
+            <span id="splitParseState" class="parse-state" aria-live="polite"><i></i>等待输入</span>
+            <span id="splitEstimate">每句一个气泡</span>
+          </div>
+        </div>
+
+        <aside class="split-side">
+          <div class="split-side-head">
+            <span class="split-side-title">选择回应的人物</span>
+            <label class="split-all">
+              <span>全部</span>
+              <select id="splitAllSelect" aria-label="把全部句子指定给某个人物"></select>
+            </label>
+          </div>
+
+          <div class="split-batch" id="splitBatch">
+            <label class="split-check">
+              <input type="checkbox" id="splitCheckAll">
+              <span>全选</span>
+            </label>
+            <span class="split-batch-count" id="splitBatchCount">已选 0</span>
+            <select id="splitBatchSpeaker" class="split-select" aria-label="批量指定人物"></select>
+            <button class="split-chip" id="splitBatchApply" type="button" disabled>批量设定</button>
+          </div>
+
+          <div class="split-list" id="splitList"></div>
+          <p class="split-note" id="splitNote">未添加的人物会沿用上一位，可在「02 人物」里添加。</p>
+          <div class="split-actions">
+            <button class="sample-link" id="splitAddPerson" type="button">
+              <svg class="icon"><use href="#i-user-plus"/></svg>
+              添加新人物
+            </button>
+            <button class="sample-link" id="splitSampleBtn" type="button">
+              <svg class="icon"><use href="#i-sparkle"/></svg>
+              填入示例文字
+            </button>
+          </div>
+        </aside>
+      </div>
+
+      <div class="dialog-foot">
+        <div class="dialog-tip">
+          <svg class="icon"><use href="#i-command"/></svg>
+          不会改动已有台词 · 插入时追加到剧本末尾
+        </div>
+        <div class="dialog-actions">
+          <button class="btn btn-quiet" id="splitCancel" type="button">取消</button>
+          <button class="btn btn-quiet" id="splitInsert" type="button" disabled>插入到剧本</button>
+          <button class="btn btn-accent" id="splitPlay" type="button" disabled>
+            替换并回放
+            <svg class="icon"><use href="#i-play"/></svg>
+          </button>
+        </div>
+      </div>
+    </form>
+  </dialog>
+
+  <div class="toast-stack" id="toastStack" aria-live="polite"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>
